@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
-import { Video, Mic, MicOff, SkipForward, X, VideoOff, Moon, Sun, MonitorPlay, Infinity, MessageSquare, Send } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { Video, Mic, MicOff, SkipForward, X, VideoOff, Moon, Sun, MonitorPlay, Infinity, MessageSquare, Send, GripHorizontal } from 'lucide-react'
 import { useWebRTC } from './hooks/useWebRTC'
 import { VideoPlayer } from './components/VideoPlayer'
 import { LayoutPicker, VideoLayout } from './components/LayoutPicker'
@@ -29,6 +29,82 @@ function App() {
   });
   const [layoutPickerOpen, setLayoutPickerOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // ---- Draggable control bar state ----
+  const [controlPos, setControlPos] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef({ x: 0, y: 0, startX: 0, startY: 0 });
+  const controlBarRef = useRef<HTMLDivElement>(null);
+
+  const handleDragStart = useCallback((clientX: number, clientY: number) => {
+    setIsDragging(true);
+    dragStartRef.current = {
+      x: clientX,
+      y: clientY,
+      startX: controlPos.x,
+      startY: controlPos.y,
+    };
+  }, [controlPos]);
+
+  const handleDragMove = useCallback((clientX: number, clientY: number) => {
+    if (!isDragging) return;
+    const dx = clientX - dragStartRef.current.x;
+    const dy = clientY - dragStartRef.current.y;
+    setControlPos({
+      x: dragStartRef.current.startX + dx,
+      y: dragStartRef.current.startY + dy,
+    });
+  }, [isDragging]);
+
+  const handleDragEnd = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  // Mouse events
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    handleDragStart(e.clientX, e.clientY);
+  }, [handleDragStart]);
+
+  useEffect(() => {
+    if (!isDragging) return;
+    const onMove = (e: MouseEvent) => handleDragMove(e.clientX, e.clientY);
+    const onUp = () => handleDragEnd();
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [isDragging, handleDragMove, handleDragEnd]);
+
+  // Touch events
+  const onTouchStart = useCallback((e: React.TouchEvent) => {
+    const t = e.touches[0];
+    handleDragStart(t.clientX, t.clientY);
+  }, [handleDragStart]);
+
+  useEffect(() => {
+    if (!isDragging) return;
+    const onMove = (e: TouchEvent) => {
+      const t = e.touches[0];
+      handleDragMove(t.clientX, t.clientY);
+    };
+    const onUp = () => handleDragEnd();
+    window.addEventListener('touchmove', onMove, { passive: true });
+    window.addEventListener('touchend', onUp);
+    return () => {
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onUp);
+    };
+  }, [isDragging, handleDragMove, handleDragEnd]);
+
+  // Reset position when visibility changes
+  useEffect(() => {
+    if (!partnerConnected && !searching) {
+      setControlPos({ x: 0, y: 0 });
+    }
+  }, [partnerConnected, searching]);
 
   useEffect(() => {
     if (isDark) {
@@ -63,7 +139,6 @@ function App() {
     }
   };
 
-
   // Renders local + remote video based on current layout
   const renderVideos = () => {
     const localVideo = (
@@ -71,7 +146,7 @@ function App() {
         {localStream ? (
           <VideoPlayer stream={localStream} muted={true} className={`w-full h-full object-cover ${!cameraEnabled ? 'opacity-0' : 'opacity-100'} transition-opacity`} />
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-zinc-600 bg-zinc-900 text-sm">Loading camera</div>
+          <div className="w-full h-full flex items-center justify-center text-zinc-600 bg-zinc-900 text-sm">Memuat kamera</div>
         )}
         {!cameraEnabled && (
           <div className="absolute inset-0 flex items-center justify-center bg-zinc-900 z-10">
@@ -80,7 +155,7 @@ function App() {
         )}
         <div className="absolute bottom-3 inset-x-0 flex justify-center pointer-events-none z-20">
           <div className="bg-black/40 backdrop-blur-md px-3 py-1 rounded-full text-[11px] font-medium tracking-wide text-white flex items-center gap-1.5 border border-white/10">
-            You {!micEnabled && <MicOff className="w-3 h-3 text-red-400 ml-1" />}
+            Kamu {!micEnabled && <MicOff className="w-3 h-3 text-red-400 ml-1" />}
           </div>
         </div>
       </div>
@@ -93,12 +168,12 @@ function App() {
         ) : (
           <div className="w-full h-full flex flex-col items-center justify-center text-zinc-600 bg-zinc-900 gap-3">
             <div className="w-6 h-6 border-2 border-zinc-700 border-t-zinc-400 rounded-full animate-spin" />
-            <span className="text-xs font-medium uppercase tracking-widest text-zinc-500">Connecting</span>
+            <span className="text-xs font-medium uppercase tracking-widest text-zinc-500">Menghubungkan</span>
           </div>
         )}
         <div className="absolute bottom-3 inset-x-0 flex justify-center pointer-events-none z-20">
           <div className="bg-black/40 backdrop-blur-md px-3 py-1 rounded-full text-[11px] font-medium tracking-wide text-white flex items-center gap-2 border border-white/10">
-            Stranger
+            Orang Asing
           </div>
         </div>
       </div>
@@ -112,27 +187,20 @@ function App() {
             <div className="flex-1 min-h-0 min-w-0 rounded-xl overflow-hidden">{remoteVideo}</div>
           </div>
         );
-
       case 'focus':
         return (
           <div className="absolute inset-0 bg-black">
             <div className="absolute inset-0">{remoteVideo}</div>
-            <div className="absolute bottom-4 right-4 w-36 sm:w-48 aspect-video rounded-2xl overflow-hidden shadow-2xl border-2 border-white/10 z-20">
-              {localVideo}
-            </div>
+            <div className="absolute bottom-4 right-4 w-36 sm:w-48 aspect-video rounded-2xl overflow-hidden shadow-2xl border-2 border-white/10 z-20">{localVideo}</div>
           </div>
         );
-
       case 'reverse-focus':
         return (
           <div className="absolute inset-0 bg-black">
             <div className="absolute inset-0">{localVideo}</div>
-            <div className="absolute bottom-4 right-4 w-36 sm:w-48 aspect-video rounded-2xl overflow-hidden shadow-2xl border-2 border-white/10 z-20">
-              {remoteVideo}
-            </div>
+            <div className="absolute bottom-4 right-4 w-36 sm:w-48 aspect-video rounded-2xl overflow-hidden shadow-2xl border-2 border-white/10 z-20">{remoteVideo}</div>
           </div>
         );
-
       case 'stacked':
         return (
           <div className="absolute inset-0 flex flex-col gap-1.5 p-1.5 bg-black">
@@ -140,17 +208,13 @@ function App() {
             <div className="flex-1 min-h-0 rounded-xl overflow-hidden">{localVideo}</div>
           </div>
         );
-
       case 'theater':
         return (
           <div className="absolute inset-0 bg-black">
             <div className="absolute inset-0">{remoteVideo}</div>
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-28 sm:w-36 aspect-video rounded-xl overflow-hidden shadow-2xl border-2 border-white/10 z-20">
-              {localVideo}
-            </div>
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-28 sm:w-36 aspect-video rounded-xl overflow-hidden shadow-2xl border-2 border-white/10 z-20">{localVideo}</div>
           </div>
         );
-
       default:
         return null;
     }
@@ -166,14 +230,10 @@ function App() {
           <span>RandomChat.</span>
         </div>
         <div className="flex items-center gap-3">
-          <div className="hidden sm:flex items-center gap-2 text-sm font-medium text-zinc-500 dark:text-zinc-400">
-            <div className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span>Systems operational</span>
-          </div>
           <button
             onClick={() => setIsDark(!isDark)}
             className="p-2 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors text-zinc-600 dark:text-zinc-400"
-            title="Toggle theme"
+            title="Ganti Tema"
           >
             {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
           </button>
@@ -188,7 +248,7 @@ function App() {
 
           <div className="w-full flex-1 min-h-0 bg-zinc-200/50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden relative shadow-sm flex items-center justify-center transition-all duration-500">
 
-            {/* Idle State: Show camera preview + Start/Searching */}
+            {/* Idle State: Show camera preview */}
             {!partnerConnected && (
               <div className="absolute inset-0 z-10 flex flex-col items-center justify-center">
 
@@ -196,7 +256,6 @@ function App() {
                 {localStream && (
                   <div className="absolute inset-0 overflow-hidden">
                     <VideoPlayer stream={localStream} muted={true} className={`w-full h-full object-cover ${!cameraEnabled ? 'opacity-0' : 'opacity-100'} transition-opacity`} />
-                    {/* Dark overlay to make text readable */}
                     <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px]" />
                   </div>
                 )}
@@ -219,8 +278,8 @@ function App() {
                         </div>
                       </div>
                       <div>
-                        <h2 className="text-xl font-medium tracking-tight mb-2 text-white">Searching for connection</h2>
-                        <p className="text-sm text-zinc-300">Please wait while we match you with a stranger.</p>
+                        <h2 className="text-xl font-medium tracking-tight mb-2 text-white">Mencari koneksi...</h2>
+                        <p className="text-sm text-zinc-300">Mohon tunggu, kami sedang mencocokkan Anda dengan orang asing.</p>
                       </div>
                     </div>
                   ) : (
@@ -229,16 +288,16 @@ function App() {
                         <MonitorPlay className="w-8 h-8" />
                       </div>
                       <h1 className="text-3xl sm:text-5xl font-bold tracking-tighter mb-4 text-white">
-                        Meet Someone New.
+                        Temui Orang Baru.
                       </h1>
                       <p className="text-zinc-300 mb-8 text-base sm:text-lg leading-relaxed">
-                        Connect with strangers securely via peer-to-peer. Minimalist, fast, anonymous.
+                        Terhubung dengan orang asing secara aman melalui koneksi peer-to-peer. Minimalis, cepat, dan anonim.
                       </p>
                       <button
                         onClick={startSearch}
                         className="bg-white text-zinc-900 hover:bg-zinc-100 px-8 py-4 rounded-full font-semibold transition-all active:scale-[0.98] cursor-pointer text-base flex items-center justify-center gap-3 w-full sm:w-auto mx-auto shadow-lg"
                       >
-                        Start Chatting
+                        Mulai Ngobrol
                       </button>
                     </div>
                   )}
@@ -263,7 +322,7 @@ function App() {
                     <button
                       onClick={() => setIsChatOpen(true)}
                       className="p-2 rounded-full bg-black/30 hover:bg-black/50 backdrop-blur-md text-white border border-white/10 transition-all relative"
-                      title="Open Chat"
+                      title="Buka Obrolan"
                     >
                       <MessageSquare className="w-4 h-4" />
                       {messages.length > 0 && (
@@ -280,13 +339,32 @@ function App() {
 
           </div>
 
-          {/* Floating Control Bar */}
-          <div className={`absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 bg-white/90 dark:bg-zinc-800/90 backdrop-blur-xl border border-zinc-200 dark:border-white/10 p-2 rounded-full shadow-2xl transition-all duration-300 ${(partnerConnected || searching) ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-12 opacity-0 scale-95 pointer-events-none'}`}>
+          {/* Draggable Floating Control Bar */}
+          <div
+            ref={controlBarRef}
+            style={{
+              transform: `translate(calc(-50% + ${controlPos.x}px), ${controlPos.y}px)`,
+              left: '50%',
+              bottom: '1.5rem',
+            }}
+            className={`absolute z-30 flex items-center gap-1.5 bg-white/90 dark:bg-zinc-800/90 backdrop-blur-xl border border-zinc-200 dark:border-white/10 p-1.5 rounded-full shadow-2xl transition-opacity duration-300 select-none ${(partnerConnected || searching) ? 'opacity-100' : 'opacity-0 pointer-events-none'} ${isDragging ? 'cursor-grabbing' : ''}`}
+          >
+            {/* Drag handle */}
+            <div
+              onMouseDown={onMouseDown}
+              onTouchStart={onTouchStart}
+              className="w-8 h-11 rounded-full flex items-center justify-center text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 cursor-grab active:cursor-grabbing transition-colors touch-none"
+              title="Geser panel kontrol"
+            >
+              <GripHorizontal className="w-4 h-4" />
+            </div>
+
+            <div className="w-px h-7 bg-zinc-300 dark:bg-zinc-600" />
 
             <button
               onClick={toggleMic}
               className={`w-11 h-11 rounded-full flex items-center justify-center transition-all cursor-pointer ${micEnabled ? 'bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-zinc-900 dark:text-white' : 'bg-red-50 text-red-500 dark:bg-red-500/10 dark:text-red-400'}`}
-              title={micEnabled ? 'Mute' : 'Unmute'}
+              title={micEnabled ? 'Bisukan' : 'Aktifkan Mikrofon'}
             >
               {micEnabled ? <Mic className="w-[18px] h-[18px]" /> : <MicOff className="w-[18px] h-[18px]" />}
             </button>
@@ -294,7 +372,7 @@ function App() {
             <button
               onClick={toggleCamera}
               className={`w-11 h-11 rounded-full flex items-center justify-center transition-all cursor-pointer ${cameraEnabled ? 'bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-zinc-900 dark:text-white' : 'bg-red-50 text-red-500 dark:bg-red-500/10 dark:text-red-400'}`}
-              title={cameraEnabled ? 'Camera Off' : 'Camera On'}
+              title={cameraEnabled ? 'Matikan Kamera' : 'Nyalakan Kamera'}
             >
               {cameraEnabled ? <Video className="w-[18px] h-[18px]" /> : <VideoOff className="w-[18px] h-[18px]" />}
             </button>
@@ -308,15 +386,15 @@ function App() {
                   className="px-5 h-11 rounded-full bg-zinc-900 hover:bg-zinc-800 text-zinc-50 dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-900 font-semibold flex items-center gap-2 transition-all cursor-pointer active:scale-95 text-sm"
                 >
                   <SkipForward className="w-4 h-4" />
-                  <span className="hidden sm:inline">Skip</span>
+                  <span className="hidden sm:inline">Lewati</span>
                 </button>
                 <button
                   onClick={disconnectUser}
                   className="w-11 h-11 sm:w-auto sm:px-5 rounded-full bg-red-500 hover:bg-red-600 text-white font-semibold flex flex-shrink-0 items-center justify-center gap-2 transition-all active:scale-95 shadow-md shadow-red-500/20 text-sm"
-                  title="Stop"
+                  title="Berhenti"
                 >
                   <X className="w-4 h-4" />
-                  <span className="hidden sm:inline">Stop</span>
+                  <span className="hidden sm:inline">Berhenti</span>
                 </button>
               </>
             ) : searching ? (
@@ -325,7 +403,7 @@ function App() {
                 className="px-5 h-11 rounded-full bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-zinc-900 dark:text-white font-semibold flex items-center gap-2 transition-all cursor-pointer active:scale-95 text-sm"
               >
                 <X className="w-4 h-4" />
-                <span>Cancel</span>
+                <span>Batalkan</span>
               </button>
             ) : null}
           </div>
@@ -343,12 +421,12 @@ function App() {
           <div className="px-4 py-3 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 flex-shrink-0">
             <div className="flex items-center gap-2 font-medium text-sm">
               <MessageSquare className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
-              <span className="text-zinc-900 dark:text-zinc-100">Live Chat</span>
+              <span className="text-zinc-900 dark:text-zinc-100">Obrolan</span>
             </div>
             <button
               onClick={() => setIsChatOpen(false)}
               className="p-1.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 transition-colors cursor-pointer"
-              title="Close Chat"
+              title="Tutup Obrolan"
             >
               <X className="w-4 h-4" />
             </button>
@@ -359,13 +437,13 @@ function App() {
             {messages.length === 0 ? (
               <div className="m-auto text-center text-zinc-400 dark:text-zinc-600 text-sm flex flex-col items-center gap-2">
                 <MessageSquare className="w-8 h-8 opacity-20" />
-                Say hi to your new partner!
+                Sapa teman baru Anda!
               </div>
             ) : (
               messages.map((msg, idx) => (
                 <div key={idx} className={`flex flex-col max-w-[85%] ${msg.sender === 'me' ? 'self-end items-end' : 'self-start items-start'}`}>
                   <span className="text-[10px] text-zinc-400 dark:text-zinc-500 mb-1 px-1 uppercase tracking-wider">
-                    {msg.sender === 'me' ? 'You' : 'Stranger'}
+                    {msg.sender === 'me' ? 'Kamu' : 'Orang Asing'}
                   </span>
                   <div className={`px-3.5 py-2 rounded-2xl text-sm ${msg.sender === 'me'
                     ? 'bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900 rounded-tr-sm'
@@ -386,7 +464,7 @@ function App() {
             <form onSubmit={handleSendMessage} className="flex gap-2">
               <input
                 type="text"
-                placeholder="Type a message..."
+                placeholder="Ketik pesan..."
                 className="flex-1 bg-zinc-100 dark:bg-zinc-800 border-none rounded-full px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-300 dark:focus:ring-zinc-600 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
@@ -403,6 +481,12 @@ function App() {
         </aside>
 
       </main>
+
+      {/* Footer */}
+      <footer className="px-6 py-2.5 flex items-center justify-between border-t border-zinc-200 dark:border-zinc-800/50 bg-white/50 dark:bg-zinc-950/50 backdrop-blur-xl flex-shrink-0 text-[11px] text-zinc-400 dark:text-zinc-600">
+        <span>© 2026 RandomChat. Seluruh hak cipta dilindungi.</span>
+        <span className="hidden sm:inline">Koneksi peer-to-peer terenkripsi · WebRTC</span>
+      </footer>
     </div>
   )
 }

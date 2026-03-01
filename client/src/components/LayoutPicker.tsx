@@ -19,7 +19,7 @@ interface LayoutOption {
 const layoutOptions: LayoutOption[] = [
     {
         id: 'side-by-side',
-        name: 'Side by Side',
+        name: 'Bersebelahan',
         icon: (
             <svg viewBox="0 0 32 22" className="w-full h-full">
                 <rect x="1" y="1" width="14" height="20" rx="2" className="fill-current opacity-60" />
@@ -29,7 +29,7 @@ const layoutOptions: LayoutOption[] = [
     },
     {
         id: 'focus',
-        name: 'Focus',
+        name: 'Fokus',
         icon: (
             <svg viewBox="0 0 32 22" className="w-full h-full">
                 <rect x="1" y="1" width="30" height="20" rx="2" className="fill-current opacity-40" />
@@ -39,7 +39,7 @@ const layoutOptions: LayoutOption[] = [
     },
     {
         id: 'reverse-focus',
-        name: 'Reverse',
+        name: 'Fokus Balik',
         icon: (
             <svg viewBox="0 0 32 22" className="w-full h-full">
                 <rect x="1" y="1" width="30" height="20" rx="2" className="fill-current opacity-60" />
@@ -49,7 +49,7 @@ const layoutOptions: LayoutOption[] = [
     },
     {
         id: 'stacked',
-        name: 'Stacked',
+        name: 'Bertumpuk',
         icon: (
             <svg viewBox="0 0 32 22" className="w-full h-full">
                 <rect x="1" y="1" width="30" height="9" rx="2" className="fill-current opacity-40" />
@@ -59,7 +59,7 @@ const layoutOptions: LayoutOption[] = [
     },
     {
         id: 'theater',
-        name: 'Theater',
+        name: 'Teater',
         icon: (
             <svg viewBox="0 0 32 22" className="w-full h-full">
                 <rect x="1" y="1" width="30" height="20" rx="2" className="fill-current opacity-40" />
@@ -75,7 +75,7 @@ export const LayoutPicker: React.FC<LayoutPickerProps> = ({ currentLayout, onLay
             <button
                 onClick={onToggle}
                 className="p-2 rounded-full bg-black/30 hover:bg-black/50 backdrop-blur-md text-white border border-white/10 transition-all"
-                title="Change Layout"
+                title="Ubah Tata Letak"
             >
                 <LayoutGrid className="w-4 h-4" />
             </button>
@@ -83,7 +83,7 @@ export const LayoutPicker: React.FC<LayoutPickerProps> = ({ currentLayout, onLay
             {isOpen && (
                 <div className="absolute top-full right-0 mt-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl p-2 w-[240px] z-50 animate-in fade-in slide-in-from-top-2 duration-200">
                     <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
-                        Video Layout
+                        Tata Letak Video
                     </div>
                     <div className="grid grid-cols-1 gap-1 mt-1">
                         {layoutOptions.map((option) => (
@@ -91,8 +91,8 @@ export const LayoutPicker: React.FC<LayoutPickerProps> = ({ currentLayout, onLay
                                 key={option.id}
                                 onClick={() => { onLayoutChange(option.id); onToggle(); }}
                                 className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-left text-sm font-medium transition-all cursor-pointer ${currentLayout === option.id
-                                        ? 'bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900'
-                                        : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                                    ? 'bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900'
+                                    : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
                                     }`}
                             >
                                 <div className={`w-8 h-5.5 flex-shrink-0 ${currentLayout === option.id ? 'text-zinc-50 dark:text-zinc-900' : 'text-zinc-500 dark:text-zinc-400'}`}>
