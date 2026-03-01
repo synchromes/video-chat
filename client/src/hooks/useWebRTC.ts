@@ -21,7 +21,7 @@ export interface ChatMessage {
 }
 
 export function useWebRTC() {
-    const [socket, setSocket] = useState<Socket | null>(null);
+    const [, setSocket] = useState<Socket | null>(null);
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
     const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
     const [partnerConnected, setPartnerConnected] = useState(false);
