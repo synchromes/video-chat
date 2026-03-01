@@ -6,7 +6,7 @@ echo "  RandomChat - VPS Deployment Script"
 echo "========================================="
 
 # --- Configuration ---
-APP_DIR="/var/www/video-chat"
+APP_DIR="/var/www/vc.tvrikalbar.id"
 REPO_URL="https://github.com/synchromes/video-chat.git"
 PORT=3000
 
