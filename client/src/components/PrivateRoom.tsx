@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { Check, Video, Mic, MicOff, VideoOff, X, MessageSquare, Send, GripHorizontal, Link2, Users, Sparkles, ArrowLeft, DoorOpen, Maximize2, Minimize2, Wifi, WifiOff } from 'lucide-react'
+import { Check, Video, Mic, MicOff, VideoOff, X, MessageSquare, Send, GripHorizontal, Link2, Users, Sparkles, ArrowLeft, DoorOpen, Maximize2, Minimize2 } from 'lucide-react'
 import { usePrivateRoom, ParticipantInfo } from '../hooks/usePrivateRoom'
 import { VideoPlayer } from './VideoPlayer'
 

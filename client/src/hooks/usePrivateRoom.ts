@@ -6,9 +6,7 @@ import {
     Track,
     RemoteTrackPublication,
     RemoteParticipant,
-    LocalParticipant,
     ConnectionState,
-    DataPacket_Kind,
     Participant,
 } from 'livekit-client';
 
