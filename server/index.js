@@ -5,6 +5,7 @@ import cors from 'cors';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import crypto from 'crypto';
+import { AccessToken } from 'livekit-server-sdk';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,15 +22,20 @@ const io = new Server(httpServer, {
 });
 
 // ==========================================
+// LiveKit config
+// ==========================================
+const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || 'devkey';
+const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || 'devsecret123456789012345678901234567890';
+const LIVEKIT_URL = process.env.LIVEKIT_URL || 'ws://localhost:7880';
+
+// ==========================================
 // State
 // ==========================================
 let waitingQueue = [];
-const activePairs = new Map(); // For random 1-to-1 chat
+const activePairs = new Map(); // random 1-to-1 chat
 
-// Private rooms: Map<roomCode, { host, participants: Set<socketId>, createdAt }>
-const privateRooms = new Map();
-// Reverse lookup: socketId -> roomCode
-const socketToRoom = new Map();
+// Private rooms (lightweight tracking — LiveKit handles the actual media)
+const privateRooms = new Map(); // code -> { host, createdAt }
 
 function generateRoomCode() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -39,11 +45,27 @@ function generateRoomCode() {
     return code;
 }
 
+// Generate a LiveKit access token
+async function createLiveKitToken(roomName, participantName, participantIdentity) {
+    const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
+        identity: participantIdentity,
+        name: participantName,
+    });
+    at.addGrant({
+        roomJoin: true,
+        room: roomName,
+        canPublish: true,
+        canSubscribe: true,
+        canPublishData: true,
+    });
+    return await at.toJwt();
+}
+
 io.on('connection', (socket) => {
     console.log(`Connected: ${socket.id}`);
 
     // ==========================================
-    // Random Chat (unchanged - 1-to-1)
+    // Random Chat (peer-to-peer, unchanged)
     // ==========================================
     socket.on('start_search', () => {
         if (waitingQueue.length > 0) {
@@ -73,9 +95,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // ==========================================
-    // Random Chat - WebRTC signaling (1-to-1 via activePairs)
-    // ==========================================
+    // Random chat WebRTC signaling
     socket.on('webrtc_offer', (data) => {
         const targetId = data.targetId || activePairs.get(socket.id);
         if (targetId) io.to(targetId).emit('webrtc_offer', { sdp: data.sdp, senderId: socket.id });
@@ -91,44 +111,37 @@ io.on('connection', (socket) => {
         if (targetId) io.to(targetId).emit('webrtc_ice_candidate', { candidate: data.candidate, senderId: socket.id });
     });
 
+    // Random chat message
     socket.on('chat_message', (data) => {
-        // For random chat: 1-to-1
         const partnerId = activePairs.get(socket.id);
         if (partnerId) {
             io.to(partnerId).emit('chat_message', { text: data.text, senderId: socket.id });
-            return;
-        }
-        // For private room: broadcast to all in room
-        const roomCode = socketToRoom.get(socket.id);
-        if (roomCode) {
-            const room = privateRooms.get(roomCode);
-            if (room) {
-                for (const pid of room.participants) {
-                    if (pid !== socket.id) {
-                        io.to(pid).emit('chat_message', { text: data.text, senderId: socket.id });
-                    }
-                }
-            }
         }
     });
 
     // ==========================================
-    // Private Room - Multi-participant
+    // Private Room + LiveKit
     // ==========================================
-    socket.on('create_room', () => {
+    socket.on('create_room', async () => {
         let roomCode;
         do { roomCode = generateRoomCode(); } while (privateRooms.has(roomCode));
 
-        const participants = new Set([socket.id]);
-        privateRooms.set(roomCode, { host: socket.id, participants, createdAt: Date.now() });
-        socketToRoom.set(socket.id, roomCode);
-        socket.join(`room_${roomCode}`);
+        privateRooms.set(roomCode, { host: socket.id, createdAt: Date.now() });
 
-        console.log(`Room ${roomCode} created by ${socket.id}`);
-        socket.emit('room_created', { roomCode });
+        try {
+            const token = await createLiveKitToken(
+                `room_${roomCode}`,
+                `Peserta_${socket.id.slice(0, 4)}`,
+                socket.id
+            );
+            socket.emit('room_created', { roomCode, token, livekitUrl: LIVEKIT_URL });
+        } catch (err) {
+            console.error('Token error:', err);
+            socket.emit('room_error', { message: 'Gagal membuat ruang. Coba lagi.' });
+        }
     });
 
-    socket.on('join_room', ({ roomCode }) => {
+    socket.on('join_room', async ({ roomCode }) => {
         const code = roomCode?.toUpperCase?.();
         const room = privateRooms.get(code);
 
@@ -136,44 +149,23 @@ io.on('connection', (socket) => {
             socket.emit('room_error', { message: 'Ruang tidak ditemukan. Pastikan kode yang dimasukkan benar.' });
             return;
         }
-        if (room.participants.has(socket.id)) {
-            socket.emit('room_error', { message: 'Anda sudah berada di ruang ini.' });
-            return;
-        }
 
-        // Get list of existing participants BEFORE adding the new one
-        const existingParticipants = Array.from(room.participants);
-
-        // Add new participant
-        room.participants.add(socket.id);
-        socketToRoom.set(socket.id, code);
-        socket.join(`room_${code}`);
-
-        console.log(`Room ${code}: ${socket.id} joined (${room.participants.size} participants)`);
-
-        // Tell the NEW joiner about ALL existing participants → they become initiators
-        socket.emit('room_participants', {
-            participants: existingParticipants,
-            roomCode: code
-        });
-
-        // Tell ALL existing participants about the new joiner
-        for (const pid of existingParticipants) {
-            io.to(pid).emit('room_peer_joined', { peerId: socket.id });
+        try {
+            const token = await createLiveKitToken(
+                `room_${code}`,
+                `Peserta_${socket.id.slice(0, 4)}`,
+                socket.id
+            );
+            socket.emit('room_joined', { roomCode: code, token, livekitUrl: LIVEKIT_URL });
+        } catch (err) {
+            console.error('Token error:', err);
+            socket.emit('room_error', { message: 'Gagal bergabung. Coba lagi.' });
         }
     });
 
-    socket.on('leave_room', ({ roomCode }) => {
-        handleRoomLeave(socket, roomCode?.toUpperCase?.());
-    });
-
-    // ==========================================
-    // Disconnect
-    // ==========================================
+    // Disconnect cleanup
     socket.on('disconnect', () => {
         console.log(`Disconnected: ${socket.id}`);
-
-        // Random chat cleanup
         waitingQueue = waitingQueue.filter(id => id !== socket.id);
         const partnerId = activePairs.get(socket.id);
         if (partnerId) {
@@ -181,48 +173,14 @@ io.on('connection', (socket) => {
             activePairs.delete(partnerId);
             io.to(partnerId).emit('partner_left');
         }
-
-        // Private room cleanup
-        const roomCode = socketToRoom.get(socket.id);
-        if (roomCode) handleRoomLeave(socket, roomCode);
+        // Room cleanup: if host disconnects, remove room entry (LiveKit handles actual disconnection)
+        for (const [code, room] of privateRooms.entries()) {
+            if (room.host === socket.id) {
+                privateRooms.delete(code);
+            }
+        }
     });
 });
-
-function handleRoomLeave(socket, roomCode) {
-    const room = privateRooms.get(roomCode);
-    if (!room) return;
-
-    room.participants.delete(socket.id);
-    socketToRoom.delete(socket.id);
-    socket.leave(`room_${roomCode}`);
-
-    console.log(`Room ${roomCode}: ${socket.id} left (${room.participants.size} remaining)`);
-
-    // Notify remaining participants
-    for (const pid of room.participants) {
-        io.to(pid).emit('room_peer_left', { peerId: socket.id });
-    }
-
-    // If host left, transfer host or close room
-    if (room.host === socket.id) {
-        if (room.participants.size > 0) {
-            // Transfer host to first remaining participant
-            const newHost = room.participants.values().next().value;
-            room.host = newHost;
-            io.to(newHost).emit('room_host_transferred');
-            console.log(`Room ${roomCode}: host transferred to ${newHost}`);
-        } else {
-            // No one left, delete room
-            privateRooms.delete(roomCode);
-            console.log(`Room ${roomCode}: deleted (empty)`);
-        }
-    }
-
-    // Also delete room if empty
-    if (room.participants.size === 0) {
-        privateRooms.delete(roomCode);
-    }
-}
 
 // SPA fallback
 app.get('*', (req, res) => {
@@ -230,4 +188,7 @@ app.get('*', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-httpServer.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+httpServer.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+    console.log(`LiveKit URL: ${LIVEKIT_URL}`);
+});
